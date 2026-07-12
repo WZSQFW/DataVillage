@@ -317,7 +317,6 @@ def get_season(month):
 
 
 def prepare_seasonal_data(df):
-    """准备季节性分析数据"""
     df_season = df.copy()
     df_season["month"] = pd.to_datetime(df_season["date"]).dt.month
     df_season["season"] = df_season["month"].apply(get_season)
@@ -332,10 +331,7 @@ def prepare_seasonal_data(df):
 
 
 def prepare_user_profile(df):
-    """准备用户画像数据（精简版：仅来源地和游客类型）"""
     profile = {}
-
-    # 1. 来源地分布
     if "ipLocatedName" in df.columns:
         location_counts = df["ipLocatedName"].dropna()
         location_counts = location_counts[location_counts != ""]
@@ -346,8 +342,7 @@ def prepare_user_profile(df):
             profile["locations"] = None
     else:
         profile["locations"] = None
-
-    # 2. 游客类型分布
+    
     if "touristType" in df.columns:
         type_counts = df["touristType"].dropna()
         type_counts = type_counts[type_counts != ""]
@@ -358,7 +353,7 @@ def prepare_user_profile(df):
             profile["types"] = None
     else:
         profile["types"] = None
-
+    
     return profile
 
 
@@ -369,10 +364,9 @@ with st.sidebar:
     names = load_competitor_list()
     scenic = st.selectbox("选择景区", names) if names else st.text_input("景区名称", "桃花源")
     st.markdown("---")
-    # 导航顺序调整：用户画像移至第5位，竞争对比移至第6位
     page = st.radio("功能", ["数据总览", "情感分析", "异常归因", "预测预警", "用户画像", "竞争对比"], index=0)
     st.markdown("---")
-
+    
     with st.expander("数据采集指引"):
         st.markdown("""
         如需采集新景区数据：
@@ -381,7 +375,7 @@ with st.sidebar:
         3. 依次运行 1-6 号脚本
         4. 刷新本页面
         """)
-
+    
     st.caption("数据来源：携程网")
     st.caption(datetime.now().strftime('%Y-%m-%d'))
 
@@ -444,7 +438,6 @@ if page == "数据总览":
     date_range = st.slider("选择日期范围", min_date, max_date, (min_date, max_date), format="YYYY-MM-DD")
     df_filtered = df[(df["date"] >= date_range[0]) & (df["date"] <= date_range[1])]
 
-    # ---- 双轴图：情感得分 + 评论数量 ----
     daily = df_filtered.groupby("date").agg({
         "情感得分": "mean",
         "score": "mean"
@@ -500,20 +493,16 @@ if page == "数据总览":
 
     st.plotly_chart(fig, use_container_width=True)
 
-    # ---- 季节性分析：合并为一个双柱对比图 ----
     st.markdown("### 季节性分析")
-
     seasonal_data = prepare_seasonal_data(df_filtered)
 
     if len(seasonal_data) > 0:
-        # 将数据转换为长格式，便于分组对比
         season_melted = seasonal_data.melt(
             id_vars=["season"],
             value_vars=["情感得分", "score"],
             var_name="指标",
             value_name="值"
         )
-        # 重命名指标显示名称
         season_melted["指标"] = season_melted["指标"].replace({
             "情感得分": "平均情感得分",
             "score": "平均评分"
@@ -545,12 +534,10 @@ if page == "数据总览":
 
         best_season = seasonal_data.loc[seasonal_data["情感得分"].idxmax(), "season"]
         worst_season = seasonal_data.loc[seasonal_data["情感得分"].idxmin(), "season"]
-        st.caption(
-            f"最佳季节：{best_season}（情感得分 {seasonal_data['情感得分'].max():.3f}）  |  最需关注：{worst_season}（情感得分 {seasonal_data['情感得分'].min():.3f}）")
+        st.caption(f"最佳季节：{best_season}（情感得分 {seasonal_data['情感得分'].max():.3f}）  |  最需关注：{worst_season}（情感得分 {seasonal_data['情感得分'].min():.3f}）")
     else:
         st.info("暂无季节性数据")
 
-    # ---- 原有：评分分布 + 情感分类 ----
     c1, c2 = st.columns(2)
     with c1:
         st.markdown("#### 评分分布")
@@ -574,7 +561,6 @@ if page == "数据总览":
                           legend=dict(orientation="h", y=-0.08, x=0.5, xanchor="center"))
         st.plotly_chart(fig, use_container_width=True)
 
-    # ---- 数据下载功能 ----
     st.markdown("---")
     st.markdown("### 数据导出")
 
@@ -937,7 +923,6 @@ elif page == "用户画像":
         else:
             st.info("暂无游客类型数据")
 
-    # 用户画像统计摘要
     st.markdown("---")
     st.markdown("#### 用户画像摘要")
 
@@ -960,44 +945,100 @@ elif page == "用户画像":
             st.metric("游客类型数", "暂无数据")
 
 
-# ==================== 竞争对比 ====================
+# ==================== 竞争对比（修改为二选对比） ====================
 
-else:
+else:  # page == "竞争对比"
     st.markdown("### 竞品对比分析")
+    st.caption("选择两个景区进行一对一对比，雷达图显示五维度得分差异")
 
     if compare_df is not None and len(compare_df) > 1:
-        dims = ["风景_得分", "服务_得分", "餐饮_得分", "住宿_得分", "交通_得分"]
-        labels = ["风景", "服务", "餐饮", "住宿", "交通"]
-
-        fig = go.Figure()
-        colors = ['#2a7a5a', '#4a8aaa', '#d4a84a', '#c94a4a', '#8a6a9a']
-        for i, (_, row) in enumerate(compare_df.iterrows()):
-            values = [row.get(d, 0) for d in dims]
-            fig.add_trace(go.Scatterpolar(
-                r=values, theta=labels,
-                name=row.get("景区", "未知"),
-                fill='toself',
-                fillcolor=f'rgba({60 + i * 20}, {140 + i * 10}, {100 + i * 5}, 0.15)',
-                line=dict(width=1.5, color=colors[i % len(colors)])
-            ))
-        fig.update_layout(
-            polar=dict(radialaxis=dict(visible=True, range=[0, 1], tickfont=dict(size=9)),
-                       angularaxis=dict(tickfont=dict(size=10, weight=600))),
-            legend=dict(orientation="h", y=-0.12, x=0.5, xanchor="center"),
-            height=340, margin=dict(l=40, r=40, t=20, b=50),
-            paper_bgcolor='rgba(0,0,0,0)'
-        )
-        st.plotly_chart(fig, use_container_width=True)
-
-        cols = ["景区", "评论数", "情感得分均值", "评分均值", "正面占比", "负面占比"]
-        avail = [c for c in cols if c in compare_df.columns]
-        st.dataframe(compare_df[avail], use_container_width=True, hide_index=True)
-
-        rank = compare_df.sort_values("情感得分均值", ascending=False)
-        rank["排名"] = range(1, len(rank) + 1)
-        st.dataframe(rank[["排名", "景区", "情感得分均值", "正面占比"]], use_container_width=True, hide_index=True)
+        # 获取所有景区名称列表
+        all_scenic_names = compare_df["景区"].tolist()
+        
+        # 两个选择框
+        col_sel1, col_sel2 = st.columns(2)
+        with col_sel1:
+            scenic_a = st.selectbox("选择景区 A", all_scenic_names, index=0)
+        with col_sel2:
+            # 默认选择第二个（如果列表长度>1，选索引1，否则选0）
+            default_b = 1 if len(all_scenic_names) > 1 else 0
+            scenic_b = st.selectbox("选择景区 B", all_scenic_names, index=default_b)
+        
+        # 如果相同则提示
+        if scenic_a == scenic_b:
+            st.warning("请选择两个不同的景区进行对比")
+        else:
+            # 筛选两个景区的数据
+            df_pair = compare_df[compare_df["景区"].isin([scenic_a, scenic_b])]
+            if len(df_pair) < 2:
+                st.error("未找到所选景区的完整数据")
+            else:
+                # 五维度雷达图
+                dims = ["风景_得分", "服务_得分", "餐饮_得分", "住宿_得分", "交通_得分"]
+                labels = ["风景", "服务", "餐饮", "住宿", "交通"]
+                
+                fig = go.Figure()
+                colors = ['#2a7a5a', '#c94a4a']  # 两种不同颜色
+                for i, (_, row) in enumerate(df_pair.iterrows()):
+                    values = [row.get(d, 0) for d in dims]
+                    fig.add_trace(go.Scatterpolar(
+                        r=values,
+                        theta=labels,
+                        name=row.get("景区", "未知"),
+                        fill='toself',
+                        fillcolor=f'rgba({60 + i * 160}, {140 - i * 40}, {100 - i * 20}, 0.15)',
+                        line=dict(width=2, color=colors[i % len(colors)])
+                    ))
+                fig.update_layout(
+                    polar=dict(
+                        radialaxis=dict(visible=True, range=[0, 1], tickfont=dict(size=10)),
+                        angularaxis=dict(tickfont=dict(size=12, weight=600))
+                    ),
+                    legend=dict(orientation="h", y=-0.12, x=0.5, xanchor="center"),
+                    height=380,
+                    margin=dict(l=40, r=40, t=20, b=50),
+                    paper_bgcolor='rgba(0,0,0,0)'
+                )
+                st.plotly_chart(fig, use_container_width=True)
+                
+                # 指标对比表格
+                st.subheader("核心指标对比")
+                cols_show = ["景区", "评论数", "情感得分均值", "评分均值", "正面占比", "负面占比"]
+                avail_cols = [c for c in cols_show if c in df_pair.columns]
+                st.dataframe(df_pair[avail_cols], use_container_width=True, hide_index=True)
+                
+                # 自动分析差距
+                st.subheader("维度差距分析")
+                row_a = df_pair[df_pair["景区"] == scenic_a].iloc[0]
+                row_b = df_pair[df_pair["景区"] == scenic_b].iloc[0]
+                
+                diff_data = []
+                for dim in dims:
+                    val_a = row_a.get(dim, 0)
+                    val_b = row_b.get(dim, 0)
+                    diff = val_a - val_b
+                    diff_data.append({
+                        "维度": dim.replace("_得分", ""),
+                        scenic_a: f"{val_a:.3f}",
+                        scenic_b: f"{val_b:.3f}",
+                        "差值 (A-B)": f"{diff:+.3f}",
+                        "优势方": "A" if diff > 0 else ("B" if diff < 0 else "持平")
+                    })
+                diff_df = pd.DataFrame(diff_data)
+                st.dataframe(diff_df, use_container_width=True, hide_index=True)
+                
+                # 找出差距最大的维度
+                max_diff_dim = max(diff_data, key=lambda x: abs(float(x["差值 (A-B)"])))
+                st.caption(f"📊 差距最大的维度：**{max_diff_dim['维度']}**（{scenic_a} 比 {scenic_b} {max_diff_dim['差值 (A-B)']}）")
+                
+                # 显示所有景区排名（折叠）
+                with st.expander("查看所有景区排名"):
+                    rank = compare_df.sort_values("情感得分均值", ascending=False).copy()
+                    rank["排名"] = range(1, len(rank) + 1)
+                    st.dataframe(rank[["排名", "景区", "情感得分均值", "正面占比"]], use_container_width=True, hide_index=True)
     else:
-        st.info("未找到对比数据")
+        st.info("未找到对比数据，请确保已运行 6_竞争对比与行动方案生成.py 生成汇总表")
+
 
 # ==================== 页脚 ====================
 
