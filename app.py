@@ -191,8 +191,33 @@ def generate_wordcloud(text):
         return None
     freq = Counter(words)
     top = dict(freq.most_common(60))
-    font_paths = ["simhei.ttf", "msyh.ttc", "C:/Windows/Fonts/simhei.ttf"]
-    fp = next((p for p in font_paths if os.path.exists(p)), None)
+    
+    # 获取当前脚本所在目录（app.py 所在目录）
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    font_paths = [
+        os.path.join(script_dir, "simhei.ttf"),          # 项目根目录
+        os.path.join(script_dir, "SimHei.ttf"),
+        os.path.join(script_dir, "msyh.ttc"),
+        "simhei.ttf",
+        "msyh.ttc",
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",  # Linux 环境 fallback（不支持中文）
+    ]
+    fp = None
+    for p in font_paths:
+        if os.path.exists(p):
+            fp = p
+            break
+    # 如果仍未找到，尝试使用 matplotlib 的默认中文字体（在云端可能无效）
+    if fp is None:
+        # 用 matplotlib 字体管理器尝试查找系统支持中文的字体（云端通常无）
+        import matplotlib.font_manager as fm
+        # 尝试查找支持中文的字体（如 'SimHei', 'Microsoft YaHei'）
+        for font in fm.findSystemFonts():
+            if 'hei' in font.lower() or 'yahei' in font.lower() or 'song' in font.lower():
+                fp = font
+                break
+    # =================================================
+
     try:
         wc = WordCloud(font_path=fp, width=400, height=220, background_color='#f8fafa',
                        max_words=60, relative_scaling=0.5, colormap='Greens',
@@ -203,7 +228,9 @@ def generate_wordcloud(text):
         ax.axis('off')
         plt.tight_layout(pad=0)
         return fig
-    except:
+    except Exception as e:
+        # 若还是失败，打印错误信息（在Streamlit日志可见）
+        print(f"词云生成失败: {e}")
         return None
 
 
